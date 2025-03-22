@@ -9,6 +9,20 @@ def not_(a: int) -> int:
 def and_(a: int, b: int) -> int:
   return not_(nand(a, b))
 
+def and3(a: list[int], b: list[int]) -> list[int]:
+  return [
+    and_(a[0], b[0]),
+    and_(a[1], b[1]),
+    and_(a[2], b[2])
+  ]
+
+def and8(a: list[int], b: list[int]) -> list[int]:
+  return [
+    and_(a[0], b[0]), and_(a[1], b[1]), and_(a[2], b[2]), and_(a[3], b[3]),
+    and_(a[4], b[4]), and_(a[5], b[5]), and_(a[6], b[6]), and_(a[7], b[7]),
+    and_(a[8], b[8])
+  ]
+
 def and16(a: list[int], b: list[int]):
   return [
     and_(a[0], b[0]), and_(a[1], b[1]), and_(a[2], b[2]), and_(a[3], b[3]),
@@ -96,11 +110,137 @@ def ALU(x: list[int], y: list[int], zx: int, nx: int, zy: int, ny: int, f: int, 
     and16(out, [no for _ in range(16)]),
     and16(not16(out), [no for _ in range(16)]),
   )
-  ng = out[15]
-  zr = not_(or_(or_(or_(or_(or_(or_(or_(or_(or_(or_(or_(or_(or_(or_(or_(new_out[15], new_out[14]), new_out[13]), new_out[12]), new_out[11]), new_out[10]), new_out[9]), new_out[8]), new_out[7]), new_out[6]), new_out[5]), new_out[4]), new_out[3]), new_out[2]), new_out[1]), new_out[0]))
+  ng = new_out[15]
+  zr = iszero16(new_out)
   return [new_out, zr, ng]
 
-def int_to_stream(a: int) -> list[int]:
+def iszero16(a: list[int]) -> int:
+  return not_(
+    or_(
+      or_(
+        or_(
+          or_(
+            or_(
+              or_(
+                or_(
+                  or_(
+                    or_(
+                      or_(
+                        or_(
+                          or_(
+                            or_(
+                              or_(
+                                or_(
+                                  a[15],
+                                  a[14]
+                                ),
+                                a[13]),
+                              a[12]),
+                            a[11]),
+                          a[10]),
+                        a[9]),
+                      a[8]),
+                    a[7]),
+                  a[6]),
+                a[5]),
+              a[4]),
+            a[3]),
+          a[2]),
+        a[1]),
+      a[0])
+    )
+
+
+def iszero8(a: list[int]) -> int:
+  return not_(
+    or_(
+      or_(
+        or_(
+          or_(
+            or_(
+              or_(
+                or_(
+                  or_(
+                    a[8],
+                    a[7]),
+                a[6]),
+              a[5]),
+            a[4]),
+          a[3]),
+        a[2]),
+      a[1]),
+    a[0])
+  )
+
+class DFF:
+  def __init__(self):
+    self.out = 0
+
+  def udpate(self, in_, clock) -> None:
+    if clock == 1:
+      self.out = in_
+    
+    return self.out
+
+
+class Register:
+  def __init__(self):
+    self.b0 = DFF()
+    self.b1 = DFF()
+    self.b2 = DFF()
+    self.b3 = DFF()
+    self.b4 = DFF()
+    self.b5 = DFF()
+    self.b6 = DFF()
+    self.b7 = DFF()
+  
+  def update(self, in_: list[int], clock: int):
+    return self.b0.update(in_[0], clock),\
+      self.b1.update(in_[1], clock),\
+      self.b2.update(in_[2], clock),\
+      self.b3.update(in_[3], clock),\
+      self.b4.update(in_[4], clock),\
+      self.b5.update(in_[5], clock),\
+      self.b6.update(in_[6], clock),\
+      self.b7.update(in_[7], clock)
+
+class RAM8:
+  def __init__(self):
+    self.r0 = Register()
+    self.r1 = Register()
+    self.r2 = Register()
+    self.r3 = Register()
+    self.r4 = Register()
+    self.r5 = Register()
+    self.r6 = Register()
+    self.r7 = Register()
+  
+  def update(self, in_: list[int], address: list[int], clock):
+    return self.r0.update(in_, and8(address, int_to_stream3(0))),\
+      self.r1.update(in_, and3(address, int_to_stream3(1))),\
+      self.r2.update(in_, and3(address, int_to_stream3(2))),\
+      self.r3.update(in_, and3(address, int_to_stream3(3))),\
+      self.r4.update(in_, and3(address, int_to_stream3(4))),\
+      self.r5.update(in_, and3(address, int_to_stream3(5))),\
+      self.r6.update(in_, and3(address, int_to_stream3(6))),\
+      self.r7.update(in_, and3(address, int_to_stream3(7)))
+
+
+
+def int_to_stream3(a: int) -> list[int]:
+  stream = [0 for _ in range(3)]
+  for i in range(3):
+    stream[2 - i] = 1 if a & 2**i > 0 else 0
+  return stream
+
+
+def int_to_stream8(a: int) -> list[int]:
+  stream = [0 for _ in range(8)]
+  for i in range(8):
+    stream[7 - i] = 1 if a & 2**i > 0 else 0
+  return stream
+
+def int_to_stream16(a: int) -> list[int]:
   stream = [0 for _ in range(16)]
   for i in range(16):
     stream[15 - i] = 1 if a & 2**i > 0 else 0
