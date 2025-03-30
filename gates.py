@@ -216,7 +216,7 @@ class RAM8:
     self.r7 = Register()
   
   def update(self, in_: list[int], address: list[int], clock):
-    return self.r0.update(in_, and8(address, int_to_stream3(0))),\
+    return self.r0.update(in_, and3(address, int_to_stream3(0))),\
       self.r1.update(in_, and3(address, int_to_stream3(1))),\
       self.r2.update(in_, and3(address, int_to_stream3(2))),\
       self.r3.update(in_, and3(address, int_to_stream3(3))),\
@@ -226,6 +226,85 @@ class RAM8:
       self.r7.update(in_, and3(address, int_to_stream3(7)))
 
 
+class RAM64:
+  def __init__(self):
+    self.ram_8_0 = RAM8()
+    self.ram_8_1 = RAM8()
+    self.ram_8_2 = RAM8()
+    self.ram_8_3 = RAM8()
+    self.ram_8_4 = RAM8()
+    self.ram_8_5 = RAM8()
+    self.ram_8_6 = RAM8()
+    self.ram_8_7 = RAM8()
+
+  def update(self, in_: list[int], address: list[int], clock):
+    return self.ram_8_0.update(in_, address[-3:], and3(address[-6:-3], int_to_stream3(0))),\
+      self.ram_8_1.update(in_, address[-3:], and3(address[-6:-3], int_to_stream3(1))),\
+      self.ram_8_2.update(in_, address[-3:], and3(address[-6:-3], int_to_stream3(2))),\
+      self.ram_8_3.update(in_, address[-3:], and3(address[-6:-3], int_to_stream3(3))),\
+      self.ram_8_4.update(in_, address[-3:], and3(address[-6:-3], int_to_stream3(4))),\
+      self.ram_8_5.update(in_, address[-3:], and3(address[-6:-3], int_to_stream3(5))),\
+      self.ram_8_6.update(in_, address[-3:], and3(address[-6:-3], int_to_stream3(6))),\
+      self.ram_8_7.update(in_, address[-3:], and3(address[-6:-3], int_to_stream3(7)))
+
+
+class RAM512:
+  def __init__(self):
+    self.ram_64_0 = RAM64()
+    self.ram_64_1 = RAM64()
+    self.ram_64_2 = RAM64()
+    self.ram_64_3 = RAM64()
+    self.ram_64_4 = RAM64()
+    self.ram_64_5 = RAM64()
+    self.ram_64_6 = RAM64()
+    self.ram_64_7 = RAM64()
+
+  def update(self, in_: list[int], address: list[int], clock):
+    return self.ram_64_0.update(in_, address[-6:], and3(address[-9:-6], int_to_stream3(0))),\
+      self.ram_64_1.update(in_, address[-6:], and3(address[-9:-6], int_to_stream3(1))),\
+      self.ram_64_2.update(in_, address[-6:], and3(address[-9:-6], int_to_stream3(2))),\
+      self.ram_64_3.update(in_, address[-6:], and3(address[-9:-6], int_to_stream3(3))),\
+      self.ram_64_4.update(in_, address[-6:], and3(address[-9:-6], int_to_stream3(4))),\
+      self.ram_64_5.update(in_, address[-6:], and3(address[-9:-6], int_to_stream3(5))),\
+      self.ram_64_6.update(in_, address[-6:], and3(address[-9:-6], int_to_stream3(6))),\
+      self.ram_64_7.update(in_, address[-6:], and3(address[-9:-6], int_to_stream3(7)))
+
+
+class RAM4K:
+  def __init__(self):
+    self.ram_512_0 = RAM512()
+    self.ram_512_1 = RAM512()
+    self.ram_512_2 = RAM512()
+    self.ram_512_3 = RAM512()
+    self.ram_512_4 = RAM512()
+    self.ram_512_5 = RAM512()
+    self.ram_512_6 = RAM512()
+    self.ram_512_7 = RAM512()
+
+  def update(self, in_: list[int], address: list[int], clock):
+    return self.ram_64_0.update(in_, address[-9:], and3(address[:3], int_to_stream3(0))),\
+      self.ram_64_1.update(in_, address[-9:], and3(address[:3], int_to_stream3(1))),\
+      self.ram_64_2.update(in_, address[-9:], and3(address[:3], int_to_stream3(2))),\
+      self.ram_64_3.update(in_, address[-9:], and3(address[:3], int_to_stream3(3))),\
+      self.ram_64_4.update(in_, address[-9:], and3(address[:3], int_to_stream3(4))),\
+      self.ram_64_5.update(in_, address[-9:], and3(address[:3], int_to_stream3(5))),\
+      self.ram_64_6.update(in_, address[-9:], and3(address[:3], int_to_stream3(6))),\
+      self.ram_64_7.update(in_, address[-9:], and3(address[:3], int_to_stream3(7)))
+
+
+class PC:
+  def __init__(self):
+    count = 0
+  
+  def update(self, in_: list[int], inc: int, load: int, reset: int):
+    temp = self.count
+    if reset:
+      self.count = 0
+    elif load:
+      self.count = in_
+    elif inc:
+      self.count += 1
+    return temp
 
 def int_to_stream3(a: int) -> list[int]:
   stream = [0 for _ in range(3)]
@@ -245,6 +324,4 @@ def int_to_stream16(a: int) -> list[int]:
   for i in range(16):
     stream[15 - i] = 1 if a & 2**i > 0 else 0
   return stream
-
-# 
 
