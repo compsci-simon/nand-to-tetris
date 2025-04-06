@@ -9,6 +9,15 @@ def not_(a: int) -> int:
 def and_(a: int, b: int) -> int:
   return not_(nand(a, b))
 
+def and3_to_1(a: list[int]) -> int:
+  return and_(a[0], and_(a[1], a[2]))
+
+def or3_to_1(a: list[int]) -> int:
+  return or_(a[0], or_(a[1], a[2]))
+
+def expand_1_to_16(a: int) -> list[int]:
+  return [a for _ in range(16)]
+
 def and3(a: list[int], b: list[int]) -> list[int]:
   return [
     and_(a[0], b[0]),
@@ -56,6 +65,9 @@ def xor(a: int, b: int) -> int:
 def mux(a: int, b: int, sel: int) -> int:
   return or_(and_(a, not_(sel)), and_(b, sel))
 
+def mux16(a: list[int], b: list[int], sel: int) -> list[int]:
+  return or16(and16(expand_1_to_16(sel), a), and16(expand_1_to_16(not_(sel)), b))
+
 def demux(in_: int, sel: int) -> tuple[int, int]:
   return and_(not_(sel), in_), and_(sel, in_)
 
@@ -90,10 +102,32 @@ def add16(a: list[int], b: list[int]) -> list[int]:
   ]
 
 def inc16(a: int) -> int:
-  return add16(a, int_to_stream(1))
+  return add16(a, int_to_stream16(1))
 
-# returns out, zr, ng
 def ALU(x: list[int], y: list[int], zx: int, nx: int, zy: int, ny: int, f: int, no: int) -> tuple[int, int, int]:
+  '''
+  Chip name: ALU
+  Inputs: x[16], y[16], // Two 16-bit data inputs
+  zx, // Zero the x input
+  nx, // Negate the x input
+  zy, // Zero the y input
+  ny, // Negate the y input
+  f, // Function code: 1 for Add, 0 for And
+  no // Negate the out output
+  Outputs: out[16], // 16-bit output
+  zr, // True iff out=0
+  ng // True iff out<0
+  Function: if zx then x = 0 // 16-bit zero constant
+  if nx then x = !x // Bit-wise negation
+  if zy then y = 0 // 16-bit zero constant
+  if ny then y = !y // Bit-wise negation
+  if f then out = x + y // Integer 2's complement addition
+  else out = x & y // Bit-wise And
+  if no then out = !out // Bit-wise negation
+  if out=0 then zr = 1 else zr = 0 // 16-bit eq. comparison
+  if out<0 then ng = 1 else ng = 0 // 16-bit neg. comparison
+  Comment: Overflow is neither detected nor handled.
+'''
   ox = or16(
     and16(x, [zx for _ in range(16)]),
     and16(not16(x), [nx for _ in range(16)])
@@ -204,7 +238,7 @@ class Register:
       self.b6.update(in_[6], clock),\
       self.b7.update(in_[7], clock)
 
-class RAM8:
+class MemoryWord:
   def __init__(self):
     self.r0 = Register()
     self.r1 = Register()
@@ -214,87 +248,160 @@ class RAM8:
     self.r5 = Register()
     self.r6 = Register()
     self.r7 = Register()
+    self.r8 = Register()
+    self.r9 = Register()
+    self.r10 = Register()
+    self.r11 = Register()
+    self.r12 = Register()
+    self.r13 = Register()
+    self.r14 = Register()
+    self.r15 = Register()
   
-  def update(self, in_: list[int], address: list[int], clock):
-    return self.r0.update(in_, and3(address, int_to_stream3(0))),\
-      self.r1.update(in_, and3(address, int_to_stream3(1))),\
-      self.r2.update(in_, and3(address, int_to_stream3(2))),\
-      self.r3.update(in_, and3(address, int_to_stream3(3))),\
-      self.r4.update(in_, and3(address, int_to_stream3(4))),\
-      self.r5.update(in_, and3(address, int_to_stream3(5))),\
-      self.r6.update(in_, and3(address, int_to_stream3(6))),\
-      self.r7.update(in_, and3(address, int_to_stream3(7)))
+  def update(self, in_: list[int], load: int):
+    return self.r0.update(in_, load),\
+      self.r1.update(in_, load),\
+      self.r2.update(in_, load),\
+      self.r3.update(in_, load),\
+      self.r4.update(in_, load),\
+      self.r5.update(in_, load),\
+      self.r6.update(in_, load),\
+      self.r7.update(in_, load),\
+      self.r8.update(in_, load),\
+      self.r9.update(in_, load),\
+      self.r10.update(in_, load),\
+      self.r11.update(in_, load),\
+      self.r12.update(in_, load),\
+      self.r13.update(in_, load),\
+      self.r14.update(in_, load),\
+      self.r15.update(in_, load)
 
 
-class RAM64:
+class Chip_128:
   def __init__(self):
-    self.ram_8_0 = RAM8()
-    self.ram_8_1 = RAM8()
-    self.ram_8_2 = RAM8()
-    self.ram_8_3 = RAM8()
-    self.ram_8_4 = RAM8()
-    self.ram_8_5 = RAM8()
-    self.ram_8_6 = RAM8()
-    self.ram_8_7 = RAM8()
+    self.word_0 = MemoryWord()
+    self.word_1 = MemoryWord()
+    self.word_2 = MemoryWord()
+    self.word_3 = MemoryWord()
+    self.word_4 = MemoryWord()
+    self.word_5 = MemoryWord()
+    self.word_6 = MemoryWord()
+    self.word_7 = MemoryWord()
 
-  def update(self, in_: list[int], address: list[int], clock):
-    return self.ram_8_0.update(in_, address[-3:], and3(address[-6:-3], int_to_stream3(0))),\
-      self.ram_8_1.update(in_, address[-3:], and3(address[-6:-3], int_to_stream3(1))),\
-      self.ram_8_2.update(in_, address[-3:], and3(address[-6:-3], int_to_stream3(2))),\
-      self.ram_8_3.update(in_, address[-3:], and3(address[-6:-3], int_to_stream3(3))),\
-      self.ram_8_4.update(in_, address[-3:], and3(address[-6:-3], int_to_stream3(4))),\
-      self.ram_8_5.update(in_, address[-3:], and3(address[-6:-3], int_to_stream3(5))),\
-      self.ram_8_6.update(in_, address[-3:], and3(address[-6:-3], int_to_stream3(6))),\
-      self.ram_8_7.update(in_, address[-3:], and3(address[-6:-3], int_to_stream3(7)))
+  def update(self, in_: list[int], address: list[int], load: int) -> list[int]:
+    selector = address[-3:]
+    select_0 = and3_to_1(and3(selector, int_to_stream3(0)))
+    select_1 = and3_to_1(and3(selector, int_to_stream3(1)))
+    select_2 = and3_to_1(and3(selector, int_to_stream3(2)))
+    select_3 = and3_to_1(and3(selector, int_to_stream3(3)))
+    select_4 = and3_to_1(and3(selector, int_to_stream3(4)))
+    select_5 = and3_to_1(and3(selector, int_to_stream3(5)))
+    select_6 = and3_to_1(and3(selector, int_to_stream3(6)))
+    select_7 = and3_to_1(and3(selector, int_to_stream3(7)))
+    word_0_out = self.word_0.update(in_, and_(select_0, load))
+    word_1_out = self.word_0.update(in_, and_(select_1, load))
+    word_2_out = self.word_0.update(in_, and_(select_2, load))
+    word_3_out = self.word_0.update(in_, and_(select_3, load))
+    word_4_out = self.word_0.update(in_, and_(select_4, load))
+    word_5_out = self.word_0.update(in_, and_(select_5, load))
+    word_6_out = self.word_0.update(in_, and_(select_6, load))
+    word_7_out = self.word_0.update(in_, and_(select_7, load))
+    return or16(and16(expand_1_to_16(select_0), word_0_out), or16(and16(expand_1_to_16(select_1), word_1_out), or16(and16(expand_1_to_16(select_2), word_2_out), or16(and16(expand_1_to_16(select_3), word_3_out), or16(and16(expand_1_to_16(select_4), word_4_out), or16(and16(expand_1_to_16(select_5), word_5_out), or16(and16(expand_1_to_16(select_6), word_6_out), and16(expand_1_to_16(select_7), word_7_out))))))))
 
 
-class RAM512:
+class Chip_1024:
   def __init__(self):
-    self.ram_64_0 = RAM64()
-    self.ram_64_1 = RAM64()
-    self.ram_64_2 = RAM64()
-    self.ram_64_3 = RAM64()
-    self.ram_64_4 = RAM64()
-    self.ram_64_5 = RAM64()
-    self.ram_64_6 = RAM64()
-    self.ram_64_7 = RAM64()
+    self.chip_0 = Chip_128()
+    self.chip_1 = Chip_128()
+    self.chip_2 = Chip_128()
+    self.chip_3 = Chip_128()
+    self.chip_4 = Chip_128()
+    self.chip_5 = Chip_128()
+    self.chip_6 = Chip_128()
+    self.chip_7 = Chip_128()
 
-  def update(self, in_: list[int], address: list[int], clock):
-    return self.ram_64_0.update(in_, address[-6:], and3(address[-9:-6], int_to_stream3(0))),\
-      self.ram_64_1.update(in_, address[-6:], and3(address[-9:-6], int_to_stream3(1))),\
-      self.ram_64_2.update(in_, address[-6:], and3(address[-9:-6], int_to_stream3(2))),\
-      self.ram_64_3.update(in_, address[-6:], and3(address[-9:-6], int_to_stream3(3))),\
-      self.ram_64_4.update(in_, address[-6:], and3(address[-9:-6], int_to_stream3(4))),\
-      self.ram_64_5.update(in_, address[-6:], and3(address[-9:-6], int_to_stream3(5))),\
-      self.ram_64_6.update(in_, address[-6:], and3(address[-9:-6], int_to_stream3(6))),\
-      self.ram_64_7.update(in_, address[-6:], and3(address[-9:-6], int_to_stream3(7)))
+  def update(self, in_: list[int], address: list[int], load):
+    selector = address[-6:-3]
+    select_0 = and3_to_1(and3(selector, int_to_stream3(0)))
+    select_1 = and3_to_1(and3(selector, int_to_stream3(1)))
+    select_2 = and3_to_1(and3(selector, int_to_stream3(2)))
+    select_3 = and3_to_1(and3(selector, int_to_stream3(3)))
+    select_4 = and3_to_1(and3(selector, int_to_stream3(4)))
+    select_5 = and3_to_1(and3(selector, int_to_stream3(5)))
+    select_6 = and3_to_1(and3(selector, int_to_stream3(6)))
+    select_7 = and3_to_1(and3(selector, int_to_stream3(7)))
+    chip_0_out = self.chip_0.update(in_, and_(select_0, load))
+    chip_1_out = self.chip_0.update(in_, and_(select_1, load))
+    chip_2_out = self.chip_0.update(in_, and_(select_2, load))
+    chip_3_out = self.chip_0.update(in_, and_(select_3, load))
+    chip_4_out = self.chip_0.update(in_, and_(select_4, load))
+    chip_5_out = self.chip_0.update(in_, and_(select_5, load))
+    chip_6_out = self.chip_0.update(in_, and_(select_6, load))
+    chip_7_out = self.chip_0.update(in_, and_(select_7, load))
+    return or16(and16(expand_1_to_16(select_0), chip_0_out), or16(and16(expand_1_to_16(select_1), chip_1_out), or16(and16(expand_1_to_16(select_2), chip_2_out), or16(and16(expand_1_to_16(select_3), chip_3_out), or16(and16(expand_1_to_16(select_4), chip_4_out), or16(and16(expand_1_to_16(select_5), chip_5_out), or16(and16(expand_1_to_16(select_6), chip_6_out), and16(expand_1_to_16(select_7), chip_7_out))))))))
 
 
-class RAM4K:
+class Chip_8192:
   def __init__(self):
-    self.ram_512_0 = RAM512()
-    self.ram_512_1 = RAM512()
-    self.ram_512_2 = RAM512()
-    self.ram_512_3 = RAM512()
-    self.ram_512_4 = RAM512()
-    self.ram_512_5 = RAM512()
-    self.ram_512_6 = RAM512()
-    self.ram_512_7 = RAM512()
+    self.chip_0 = Chip_1024()
+    self.chip_1 = Chip_1024()
+    self.chip_2 = Chip_1024()
+    self.chip_3 = Chip_1024()
+    self.chip_4 = Chip_1024()
+    self.chip_5 = Chip_1024()
+    self.chip_6 = Chip_1024()
+    self.chip_7 = Chip_1024()
 
-  def update(self, in_: list[int], address: list[int], clock):
-    return self.ram_64_0.update(in_, address[-9:], and3(address[:3], int_to_stream3(0))),\
-      self.ram_64_1.update(in_, address[-9:], and3(address[:3], int_to_stream3(1))),\
-      self.ram_64_2.update(in_, address[-9:], and3(address[:3], int_to_stream3(2))),\
-      self.ram_64_3.update(in_, address[-9:], and3(address[:3], int_to_stream3(3))),\
-      self.ram_64_4.update(in_, address[-9:], and3(address[:3], int_to_stream3(4))),\
-      self.ram_64_5.update(in_, address[-9:], and3(address[:3], int_to_stream3(5))),\
-      self.ram_64_6.update(in_, address[-9:], and3(address[:3], int_to_stream3(6))),\
-      self.ram_64_7.update(in_, address[-9:], and3(address[:3], int_to_stream3(7)))
+  def update(self, in_: list[int], address: list[int], load: int) -> list[int]:
+    selector = address[-9:-6]
+    select_0 = and3_to_1(and3(selector, int_to_stream3(0)))
+    select_1 = and3_to_1(and3(selector, int_to_stream3(1)))
+    select_2 = and3_to_1(and3(selector, int_to_stream3(2)))
+    select_3 = and3_to_1(and3(selector, int_to_stream3(3)))
+    select_4 = and3_to_1(and3(selector, int_to_stream3(4)))
+    select_5 = and3_to_1(and3(selector, int_to_stream3(5)))
+    select_6 = and3_to_1(and3(selector, int_to_stream3(6)))
+    select_7 = and3_to_1(and3(selector, int_to_stream3(7)))
+    chip_0_out = self.chip_0.update(in_, and_(select_0, load))
+    chip_1_out = self.chip_0.update(in_, and_(select_1, load))
+    chip_2_out = self.chip_0.update(in_, and_(select_2, load))
+    chip_3_out = self.chip_0.update(in_, and_(select_3, load))
+    chip_4_out = self.chip_0.update(in_, and_(select_4, load))
+    chip_5_out = self.chip_0.update(in_, and_(select_5, load))
+    chip_6_out = self.chip_0.update(in_, and_(select_6, load))
+    chip_7_out = self.chip_0.update(in_, and_(select_7, load))
+    return or16(and16(expand_1_to_16(select_0), chip_0_out), or16(and16(expand_1_to_16(select_1), chip_1_out), or16(and16(expand_1_to_16(select_2), chip_2_out), or16(and16(expand_1_to_16(select_3), chip_3_out), or16(and16(expand_1_to_16(select_4), chip_4_out), or16(and16(expand_1_to_16(select_5), chip_5_out), or16(and16(expand_1_to_16(select_6), chip_6_out), and16(expand_1_to_16(select_7), chip_7_out))))))))
+    
 
+class Chip_32768:
+  def __init__(self):
+    self.chip_0 = Chip_8192()
+    self.chip_1 = Chip_8192()
+    self.chip_2 = Chip_8192()
+    self.chip_3 = Chip_8192()
+
+  def update(self, in_: list[int], address: list[int], load: int) -> list[int]:
+    selector = address[-12:-9]
+    select_0 = and3_to_1(and3(selector, int_to_stream3(0)))
+    select_1 = and3_to_1(and3(selector, int_to_stream3(1)))
+    select_2 = and3_to_1(and3(selector, int_to_stream3(2)))
+    select_3 = and3_to_1(and3(selector, int_to_stream3(3)))
+    select_4 = and3_to_1(and3(selector, int_to_stream3(4)))
+    select_5 = and3_to_1(and3(selector, int_to_stream3(5)))
+    select_6 = and3_to_1(and3(selector, int_to_stream3(6)))
+    select_7 = and3_to_1(and3(selector, int_to_stream3(7)))
+    chip_0_out = self.chip_0.update(in_, and_(select_0, load))
+    chip_1_out = self.chip_0.update(in_, and_(select_1, load))
+    chip_2_out = self.chip_0.update(in_, and_(select_2, load))
+    chip_3_out = self.chip_0.update(in_, and_(select_3, load))
+    chip_4_out = self.chip_0.update(in_, and_(select_4, load))
+    chip_5_out = self.chip_0.update(in_, and_(select_5, load))
+    chip_6_out = self.chip_0.update(in_, and_(select_6, load))
+    chip_7_out = self.chip_0.update(in_, and_(select_7, load))
+    return or16(and16(expand_1_to_16(select_0), chip_0_out), or16(and16(expand_1_to_16(select_1), chip_1_out), or16(and16(expand_1_to_16(select_2), chip_2_out), or16(and16(expand_1_to_16(select_3), chip_3_out), or16(and16(expand_1_to_16(select_4), chip_4_out), or16(and16(expand_1_to_16(select_5), chip_5_out), or16(and16(expand_1_to_16(select_6), chip_6_out), and16(expand_1_to_16(select_7), chip_7_out))))))))
 
 class PC:
   def __init__(self):
-    count = 0
+    self.count = 0
   
   def update(self, in_: list[int], inc: int, load: int, reset: int):
     temp = self.count
@@ -306,12 +413,91 @@ class PC:
       self.count += 1
     return temp
 
+class CPU:
+  def __init__(self):
+    self.pc = PC()
+    self.regA = MemoryWord()
+    self.regD = MemoryWord()
+    self.ALUOutput = [0 for _ in range(16)]
+  
+  def update(self, inM: list[int], instruction: list[int], reset: int):
+    '''
+    inM: 16 bit input from memory
+    instruction: 16 bit input instruction
+    reset: Set pc to 0 if set
+    '''
+    i, a, c, d, j = instruction[0], instruction[3], instruction[4:10], instruction[10:13], instruction[13:16]
+    outM, writeM, addressM, pc = 0, 0, 0, 0
+    mux0Out = mux16(self.ALUOutput, instruction, i)
+    regAOut = self.regA.update(mux0Out, d[0])
+    addressM = regAOut
+    
+    regDOut = self.regD.update(self.ALUOutput, d[1])
+    mux1Out = mux16(regAOut, inM, i)
+    
+    [self.ALUOutput, zr, ng] = ALU(regDOut, mux1Out, *c)
+    
+    outM = self.ALUOutput
+    writeM = d[2]
+
+    inc = and_(not_(j[0]), and_(not_(j[1]), not_(j[2])))
+    load = or3_to_1(and3(j, [ng, zr, not_(ng)]))
+    
+    pc = self.pc.update(regAOut, inc, load, reset)
+    
+    return outM, writeM, addressM, pc
+
+class MemoryChip:
+    def __init__(self):
+      self.chip = Chip_32768()
+
+    def update(self, in_: list[int], address: list[int], load: int) -> list[int]:
+        '''
+        in_: the input to store if load is set - 16 bits
+        address: The address to store or read from - 15 bits
+        load: whether or not to store in_ - 1 bit
+        '''
+        return self.chip.update(in_, address, load)
+
 def int_to_stream3(a: int) -> list[int]:
   stream = [0 for _ in range(3)]
   for i in range(3):
     stream[2 - i] = 1 if a & 2**i > 0 else 0
   return stream
 
+
+class ROM32K:
+  def __init__(self):
+    self.chip = Chip_32768()
+  
+  def update(self, address: list[int]) -> list[int]:
+    '''
+    address: 15 bit input address
+    returns a 16 bit memory word
+    '''
+    return self.chip.update([0 for _ in range(16)], address, 0)
+  
+  def write(self, in_: list[int], address: list[int]) -> None:
+    self.chip.update(in_, address, 1)
+class Computer:
+  def __init__(self):
+    self.rom = ROM32K()
+    self.mem = MemoryChip()
+    self.cpu = CPU()
+    
+  def run(self):
+    outM, writeM, addressM, pc = self.cpu.update(int_to_stream16(0), int_to_stream16(0), 1)
+    inM = int_to_stream16(0)
+    while True:
+      instruction = self.rom.update(pc)
+      outM, writeM, addressM, pc = self.cpu.update(inM, instruction, 0)
+      inM = self.mem.update(outM, addressM, writeM)
+  
+  def load_instructions(self, filename: str):
+    addr = 0
+    with open(filename, 'r') as f:
+      for line in f.readlines():
+        self.rom.write(list(line), int_to_stream16(addr))
 
 def int_to_stream8(a: int) -> list[int]:
   stream = [0 for _ in range(8)]
