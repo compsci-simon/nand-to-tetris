@@ -1,4 +1,3 @@
-from ctypes import c_int16
 
 def nand(a: int, b: int) -> int:
   return 0 if (a and b) else 1
@@ -66,7 +65,7 @@ def mux(a: int, b: int, sel: int) -> int:
   return or_(and_(a, not_(sel)), and_(b, sel))
 
 def mux16(a: list[int], b: list[int], sel: int) -> list[int]:
-  return or16(and16(expand_1_to_16(sel), a), and16(expand_1_to_16(not_(sel)), b))
+  return or16(and16(expand_1_to_16(not_(sel)), a), and16(expand_1_to_16(sel), b))
 
 def demux(in_: int, sel: int) -> tuple[int, int]:
   return and_(not_(sel), in_), and_(sel, in_)
@@ -95,7 +94,7 @@ def add16(a: list[int], b: list[int]) -> list[int]:
   r4 = full_adder(a[3], b[3], r5[1])
   r3 = full_adder(a[2], b[2], r4[1])
   r2 = full_adder(a[1], b[1], r3[1])
-  r1 = full_adder(a[0], b[0], r2[0])
+  r1 = full_adder(a[0], b[0], r2[1])
   return [
     r1[0], r2[0], r3[0], r4[0], r5[0], r6[0], r7[0],
     r8[0], r9[0], r10[0], r11[0], r12[0], r13[0], r14[0], r15[0], r16[0]
@@ -104,7 +103,7 @@ def add16(a: list[int], b: list[int]) -> list[int]:
 def inc16(a: int) -> int:
   return add16(a, int_to_stream16(1))
 
-def ALU(x: list[int], y: list[int], zx: int, nx: int, zy: int, ny: int, f: int, no: int) -> tuple[int, int, int]:
+def ALU(x: list[int], y: list[int], zx: int, nx: int, zy: int, ny: int, f: int, no: int) -> tuple[list[int], int, int]:
   '''
   Chip name: ALU
   Inputs: x[16], y[16], // Two 16-bit data inputs
@@ -128,25 +127,43 @@ def ALU(x: list[int], y: list[int], zx: int, nx: int, zy: int, ny: int, f: int, 
   if out<0 then ng = 1 else ng = 0 // 16-bit neg. comparison
   Comment: Overflow is neither detected nor handled.
 '''
-  ox = or16(
-    and16(x, [zx for _ in range(16)]),
-    and16(not16(x), [nx for _ in range(16)])
-  )
-  oy = or16(
-    and16(y, [zy for _ in range(16)]),
-    and16(not16(y), [ny for _ in range(16)])
-  )
-  out = or16(
-    and16(add16(ox, oy), [f for _ in range(16)]),
-    and16(and16(ox, oy), [not_(f) for _ in range(16)])
-  )
-  new_out = and16(
-    and16(out, [no for _ in range(16)]),
-    and16(not16(out), [no for _ in range(16)]),
-  )
-  ng = new_out[15]
-  zr = iszero16(new_out)
-  return [new_out, zr, ng]
+  # Step 1: Handle zx (zero x)
+  if zx:
+    ox = [0] * 16
+  else:
+    ox = x[:]
+  
+  # Step 2: Handle nx (negate x)
+  if nx:
+    ox = not16(ox)
+  
+  # Step 3: Handle zy (zero y)
+  if zy:
+    oy = [0] * 16
+  else:
+    oy = y[:]
+  
+  # Step 4: Handle ny (negate y)
+  if ny:
+    oy = not16(oy)
+  
+  # Step 5: Handle f (function select)
+  if f:
+    # f=1: addition
+    out = add16(ox, oy)
+  else:
+    # f=0: bitwise AND
+    out = and16(ox, oy)
+  
+  # Step 6: Handle no (negate output)
+  if no:
+    out = not16(out)
+  
+  # Step 7: Calculate status flags
+  zr = iszero16(out)  # zr=1 if out is zero
+  ng = out[0]         # ng=1 if out is negative (MSB=1 in 2's complement)
+  
+  return (out, zr, ng)
 
 def iszero16(a: list[int]) -> int:
   return not_(
@@ -210,8 +227,8 @@ class DFF:
   def __init__(self):
     self.out = 0
 
-  def udpate(self, in_, clock) -> None:
-    if clock == 1:
+  def update(self, in_, load) -> int:
+    if load == 1:
       self.out = in_
     
     return self.out
@@ -227,177 +244,259 @@ class Register:
     self.b5 = DFF()
     self.b6 = DFF()
     self.b7 = DFF()
-  
-  def update(self, in_: list[int], clock: int):
-    return self.b0.update(in_[0], clock),\
-      self.b1.update(in_[1], clock),\
-      self.b2.update(in_[2], clock),\
-      self.b3.update(in_[3], clock),\
-      self.b4.update(in_[4], clock),\
-      self.b5.update(in_[5], clock),\
-      self.b6.update(in_[6], clock),\
-      self.b7.update(in_[7], clock)
-
-class MemoryWord:
-  def __init__(self):
-    self.r0 = Register()
-    self.r1 = Register()
-    self.r2 = Register()
-    self.r3 = Register()
-    self.r4 = Register()
-    self.r5 = Register()
-    self.r6 = Register()
-    self.r7 = Register()
-    self.r8 = Register()
-    self.r9 = Register()
-    self.r10 = Register()
-    self.r11 = Register()
-    self.r12 = Register()
-    self.r13 = Register()
-    self.r14 = Register()
-    self.r15 = Register()
-  
+    self.b8 = DFF()
+    self.b9 = DFF()
+    self.b10 = DFF()
+    self.b11 = DFF()
+    self.b12 = DFF()
+    self.b13 = DFF()
+    self.b14 = DFF()
+    self.b15 = DFF()
+ 
   def update(self, in_: list[int], load: int):
-    return self.r0.update(in_, load),\
-      self.r1.update(in_, load),\
-      self.r2.update(in_, load),\
-      self.r3.update(in_, load),\
-      self.r4.update(in_, load),\
-      self.r5.update(in_, load),\
-      self.r6.update(in_, load),\
-      self.r7.update(in_, load),\
-      self.r8.update(in_, load),\
-      self.r9.update(in_, load),\
-      self.r10.update(in_, load),\
-      self.r11.update(in_, load),\
-      self.r12.update(in_, load),\
-      self.r13.update(in_, load),\
-      self.r14.update(in_, load),\
-      self.r15.update(in_, load)
+    # Only update if load is enabled
+    return self.b0.update(in_[0], load),\
+      self.b1.update(in_[1], load),\
+      self.b2.update(in_[2], load),\
+      self.b3.update(in_[3], load),\
+      self.b4.update(in_[4], load),\
+      self.b5.update(in_[5], load),\
+      self.b6.update(in_[6], load),\
+      self.b7.update(in_[7], load),\
+      self.b8.update(in_[8], load),\
+      self.b9.update(in_[9], load),\
+      self.b10.update(in_[10], load),\
+      self.b11.update(in_[11], load),\
+      self.b12.update(in_[12], load),\
+      self.b13.update(in_[13], load),\
+      self.b14.update(in_[14], load),\
+      self.b15.update(in_[15], load)
 
-
-class Chip_128:
+class RAM8:
   def __init__(self):
-    self.word_0 = MemoryWord()
-    self.word_1 = MemoryWord()
-    self.word_2 = MemoryWord()
-    self.word_3 = MemoryWord()
-    self.word_4 = MemoryWord()
-    self.word_5 = MemoryWord()
-    self.word_6 = MemoryWord()
-    self.word_7 = MemoryWord()
-
+    self.register0 = Register()
+    self.register1 = Register()
+    self.register2 = Register()
+    self.register3 = Register()
+    self.register4 = Register()
+    self.register5 = Register()
+    self.register6 = Register()
+    self.register7 = Register()
+  
   def update(self, in_: list[int], address: list[int], load: int) -> list[int]:
-    selector = address[-3:]
-    select_0 = and3_to_1(and3(selector, int_to_stream3(0)))
-    select_1 = and3_to_1(and3(selector, int_to_stream3(1)))
-    select_2 = and3_to_1(and3(selector, int_to_stream3(2)))
-    select_3 = and3_to_1(and3(selector, int_to_stream3(3)))
-    select_4 = and3_to_1(and3(selector, int_to_stream3(4)))
-    select_5 = and3_to_1(and3(selector, int_to_stream3(5)))
-    select_6 = and3_to_1(and3(selector, int_to_stream3(6)))
-    select_7 = and3_to_1(and3(selector, int_to_stream3(7)))
-    word_0_out = self.word_0.update(in_, and_(select_0, load))
-    word_1_out = self.word_0.update(in_, and_(select_1, load))
-    word_2_out = self.word_0.update(in_, and_(select_2, load))
-    word_3_out = self.word_0.update(in_, and_(select_3, load))
-    word_4_out = self.word_0.update(in_, and_(select_4, load))
-    word_5_out = self.word_0.update(in_, and_(select_5, load))
-    word_6_out = self.word_0.update(in_, and_(select_6, load))
-    word_7_out = self.word_0.update(in_, and_(select_7, load))
-    return or16(and16(expand_1_to_16(select_0), word_0_out), or16(and16(expand_1_to_16(select_1), word_1_out), or16(and16(expand_1_to_16(select_2), word_2_out), or16(and16(expand_1_to_16(select_3), word_3_out), or16(and16(expand_1_to_16(select_4), word_4_out), or16(and16(expand_1_to_16(select_5), word_5_out), or16(and16(expand_1_to_16(select_6), word_6_out), and16(expand_1_to_16(select_7), word_7_out))))))))
-
-
-class Chip_1024:
-  def __init__(self):
-    self.chip_0 = Chip_128()
-    self.chip_1 = Chip_128()
-    self.chip_2 = Chip_128()
-    self.chip_3 = Chip_128()
-    self.chip_4 = Chip_128()
-    self.chip_5 = Chip_128()
-    self.chip_6 = Chip_128()
-    self.chip_7 = Chip_128()
-
-  def update(self, in_: list[int], address: list[int], load):
-    selector = address[-6:-3]
-    select_0 = and3_to_1(and3(selector, int_to_stream3(0)))
-    select_1 = and3_to_1(and3(selector, int_to_stream3(1)))
-    select_2 = and3_to_1(and3(selector, int_to_stream3(2)))
-    select_3 = and3_to_1(and3(selector, int_to_stream3(3)))
-    select_4 = and3_to_1(and3(selector, int_to_stream3(4)))
-    select_5 = and3_to_1(and3(selector, int_to_stream3(5)))
-    select_6 = and3_to_1(and3(selector, int_to_stream3(6)))
-    select_7 = and3_to_1(and3(selector, int_to_stream3(7)))
-    chip_0_out = self.chip_0.update(in_, and_(select_0, load))
-    chip_1_out = self.chip_0.update(in_, and_(select_1, load))
-    chip_2_out = self.chip_0.update(in_, and_(select_2, load))
-    chip_3_out = self.chip_0.update(in_, and_(select_3, load))
-    chip_4_out = self.chip_0.update(in_, and_(select_4, load))
-    chip_5_out = self.chip_0.update(in_, and_(select_5, load))
-    chip_6_out = self.chip_0.update(in_, and_(select_6, load))
-    chip_7_out = self.chip_0.update(in_, and_(select_7, load))
-    return or16(and16(expand_1_to_16(select_0), chip_0_out), or16(and16(expand_1_to_16(select_1), chip_1_out), or16(and16(expand_1_to_16(select_2), chip_2_out), or16(and16(expand_1_to_16(select_3), chip_3_out), or16(and16(expand_1_to_16(select_4), chip_4_out), or16(and16(expand_1_to_16(select_5), chip_5_out), or16(and16(expand_1_to_16(select_6), chip_6_out), and16(expand_1_to_16(select_7), chip_7_out))))))))
-
-
-class Chip_8192:
-  def __init__(self):
-    self.chip_0 = Chip_1024()
-    self.chip_1 = Chip_1024()
-    self.chip_2 = Chip_1024()
-    self.chip_3 = Chip_1024()
-    self.chip_4 = Chip_1024()
-    self.chip_5 = Chip_1024()
-    self.chip_6 = Chip_1024()
-    self.chip_7 = Chip_1024()
-
-  def update(self, in_: list[int], address: list[int], load: int) -> list[int]:
-    selector = address[-9:-6]
-    select_0 = and3_to_1(and3(selector, int_to_stream3(0)))
-    select_1 = and3_to_1(and3(selector, int_to_stream3(1)))
-    select_2 = and3_to_1(and3(selector, int_to_stream3(2)))
-    select_3 = and3_to_1(and3(selector, int_to_stream3(3)))
-    select_4 = and3_to_1(and3(selector, int_to_stream3(4)))
-    select_5 = and3_to_1(and3(selector, int_to_stream3(5)))
-    select_6 = and3_to_1(and3(selector, int_to_stream3(6)))
-    select_7 = and3_to_1(and3(selector, int_to_stream3(7)))
-    chip_0_out = self.chip_0.update(in_, and_(select_0, load))
-    chip_1_out = self.chip_0.update(in_, and_(select_1, load))
-    chip_2_out = self.chip_0.update(in_, and_(select_2, load))
-    chip_3_out = self.chip_0.update(in_, and_(select_3, load))
-    chip_4_out = self.chip_0.update(in_, and_(select_4, load))
-    chip_5_out = self.chip_0.update(in_, and_(select_5, load))
-    chip_6_out = self.chip_0.update(in_, and_(select_6, load))
-    chip_7_out = self.chip_0.update(in_, and_(select_7, load))
-    return or16(and16(expand_1_to_16(select_0), chip_0_out), or16(and16(expand_1_to_16(select_1), chip_1_out), or16(and16(expand_1_to_16(select_2), chip_2_out), or16(and16(expand_1_to_16(select_3), chip_3_out), or16(and16(expand_1_to_16(select_4), chip_4_out), or16(and16(expand_1_to_16(select_5), chip_5_out), or16(and16(expand_1_to_16(select_6), chip_6_out), and16(expand_1_to_16(select_7), chip_7_out))))))))
+    # Use last 3 bits of address to select register (0-7)
+    addr_bits = address[-3:]  # Get last 3 bits
     
+    # Decode address to select which register to enable
+    sel0 = and_(and_(not_(addr_bits[0]), not_(addr_bits[1])), not_(addr_bits[2]))  # 000
+    sel1 = and_(and_(not_(addr_bits[0]), not_(addr_bits[1])), addr_bits[2])        # 001
+    sel2 = and_(and_(not_(addr_bits[0]), addr_bits[1]), not_(addr_bits[2]))        # 010
+    sel3 = and_(and_(not_(addr_bits[0]), addr_bits[1]), addr_bits[2])              # 011
+    sel4 = and_(and_(addr_bits[0], not_(addr_bits[1])), not_(addr_bits[2]))        # 100
+    sel5 = and_(and_(addr_bits[0], not_(addr_bits[1])), addr_bits[2])              # 101
+    sel6 = and_(and_(addr_bits[0], addr_bits[1]), not_(addr_bits[2]))              # 110
+    sel7 = and_(and_(addr_bits[0], addr_bits[1]), addr_bits[2])                    # 111
+    
+    # Update each register with load signal only if selected
+    out0 = self.register0.update(in_, and_(sel0, load))
+    out1 = self.register1.update(in_, and_(sel1, load))
+    out2 = self.register2.update(in_, and_(sel2, load))
+    out3 = self.register3.update(in_, and_(sel3, load))
+    out4 = self.register4.update(in_, and_(sel4, load))
+    out5 = self.register5.update(in_, and_(sel5, load))
+    out6 = self.register6.update(in_, and_(sel6, load))
+    out7 = self.register7.update(in_, and_(sel7, load))
+    
+    # Convert tuples to lists for the mux operations
+    out0_list = list(out0)
+    out1_list = list(out1)
+    out2_list = list(out2)
+    out3_list = list(out3)
+    out4_list = list(out4)
+    out5_list = list(out5)
+    out6_list = list(out6)
+    out7_list = list(out7)
+    
+    # Mux the outputs based on address
+    temp1 = mux16(out0_list, out1_list, addr_bits[2])
+    temp2 = mux16(out2_list, out3_list, addr_bits[2])
+    temp3 = mux16(out4_list, out5_list, addr_bits[2])
+    temp4 = mux16(out6_list, out7_list, addr_bits[2])
+    temp5 = mux16(temp1, temp2, addr_bits[1])
+    temp6 = mux16(temp3, temp4, addr_bits[1])
+    
+    return mux16(temp5, temp6, addr_bits[0])
 
-class Chip_32768:
+class RAM64:
   def __init__(self):
-    self.chip_0 = Chip_8192()
-    self.chip_1 = Chip_8192()
-    self.chip_2 = Chip_8192()
-    self.chip_3 = Chip_8192()
-
+    self.ram8_0 = RAM8()
+    self.ram8_1 = RAM8()
+    self.ram8_2 = RAM8()
+    self.ram8_3 = RAM8()
+    self.ram8_4 = RAM8()
+    self.ram8_5 = RAM8()
+    self.ram8_6 = RAM8()
+    self.ram8_7 = RAM8()
+  
   def update(self, in_: list[int], address: list[int], load: int) -> list[int]:
-    selector = address[-12:-9]
-    select_0 = and3_to_1(and3(selector, int_to_stream3(0)))
-    select_1 = and3_to_1(and3(selector, int_to_stream3(1)))
-    select_2 = and3_to_1(and3(selector, int_to_stream3(2)))
-    select_3 = and3_to_1(and3(selector, int_to_stream3(3)))
-    select_4 = and3_to_1(and3(selector, int_to_stream3(4)))
-    select_5 = and3_to_1(and3(selector, int_to_stream3(5)))
-    select_6 = and3_to_1(and3(selector, int_to_stream3(6)))
-    select_7 = and3_to_1(and3(selector, int_to_stream3(7)))
-    chip_0_out = self.chip_0.update(in_, and_(select_0, load))
-    chip_1_out = self.chip_0.update(in_, and_(select_1, load))
-    chip_2_out = self.chip_0.update(in_, and_(select_2, load))
-    chip_3_out = self.chip_0.update(in_, and_(select_3, load))
-    chip_4_out = self.chip_0.update(in_, and_(select_4, load))
-    chip_5_out = self.chip_0.update(in_, and_(select_5, load))
-    chip_6_out = self.chip_0.update(in_, and_(select_6, load))
-    chip_7_out = self.chip_0.update(in_, and_(select_7, load))
-    return or16(and16(expand_1_to_16(select_0), chip_0_out), or16(and16(expand_1_to_16(select_1), chip_1_out), or16(and16(expand_1_to_16(select_2), chip_2_out), or16(and16(expand_1_to_16(select_3), chip_3_out), or16(and16(expand_1_to_16(select_4), chip_4_out), or16(and16(expand_1_to_16(select_5), chip_5_out), or16(and16(expand_1_to_16(select_6), chip_6_out), and16(expand_1_to_16(select_7), chip_7_out))))))))
+    # Use bits [5:3] to select which RAM8 unit (0-7)
+    # Use bits [2:0] to select register within that RAM8 unit
+    ram8_select_bits = address[-6:-3]  # Bits 5,4,3 select RAM8 unit
+    
+    # Decode which RAM8 to enable
+    sel0 = and_(and_(not_(ram8_select_bits[0]), not_(ram8_select_bits[1])), not_(ram8_select_bits[2]))  # 000
+    sel1 = and_(and_(not_(ram8_select_bits[0]), not_(ram8_select_bits[1])), ram8_select_bits[2])        # 001
+    sel2 = and_(and_(not_(ram8_select_bits[0]), ram8_select_bits[1]), not_(ram8_select_bits[2]))        # 010
+    sel3 = and_(and_(not_(ram8_select_bits[0]), ram8_select_bits[1]), ram8_select_bits[2])              # 011
+    sel4 = and_(and_(ram8_select_bits[0], not_(ram8_select_bits[1])), not_(ram8_select_bits[2]))        # 100
+    sel5 = and_(and_(ram8_select_bits[0], not_(ram8_select_bits[1])), ram8_select_bits[2])              # 101
+    sel6 = and_(and_(ram8_select_bits[0], ram8_select_bits[1]), not_(ram8_select_bits[2]))              # 110
+    sel7 = and_(and_(ram8_select_bits[0], ram8_select_bits[1]), ram8_select_bits[2])                    # 111
+    
+    # Update each RAM8 with load signal only if selected
+    out0 = self.ram8_0.update(in_, address, and_(sel0, load))
+    out1 = self.ram8_1.update(in_, address, and_(sel1, load))
+    out2 = self.ram8_2.update(in_, address, and_(sel2, load))
+    out3 = self.ram8_3.update(in_, address, and_(sel3, load))
+    out4 = self.ram8_4.update(in_, address, and_(sel4, load))
+    out5 = self.ram8_5.update(in_, address, and_(sel5, load))
+    out6 = self.ram8_6.update(in_, address, and_(sel6, load))
+    out7 = self.ram8_7.update(in_, address, and_(sel7, load))
+    
+    # Mux the outputs based on RAM8 selection bits
+    temp1 = mux16(out0, out1, ram8_select_bits[2])
+    temp2 = mux16(out2, out3, ram8_select_bits[2])
+    temp3 = mux16(out4, out5, ram8_select_bits[2])
+    temp4 = mux16(out6, out7, ram8_select_bits[2])
+    
+    temp5 = mux16(temp1, temp2, ram8_select_bits[1])
+    temp6 = mux16(temp3, temp4, ram8_select_bits[1])
+    
+    return mux16(temp5, temp6, ram8_select_bits[0])
+
+class RAM512:
+  def __init__(self):
+    self.ram64_0 = RAM64()
+    self.ram64_1 = RAM64()
+    self.ram64_2 = RAM64()
+    self.ram64_3 = RAM64()
+    self.ram64_4 = RAM64()
+    self.ram64_5 = RAM64()
+    self.ram64_6 = RAM64()
+    self.ram64_7 = RAM64()
+  
+  def update(self, in_: list[int], address: list[int], load: int) -> list[int]:
+    # Use bits [8:6] to select which RAM64 unit (0-7)
+    # Use bits [5:0] to select location within that RAM64 unit
+    ram64_select_bits = address[-9:-6]  # Bits 8,7,6 select RAM64 unit
+    
+    # Decode which RAM64 to enable
+    sel0 = and_(and_(not_(ram64_select_bits[0]), not_(ram64_select_bits[1])), not_(ram64_select_bits[2]))  # 000
+    sel1 = and_(and_(not_(ram64_select_bits[0]), not_(ram64_select_bits[1])), ram64_select_bits[2])        # 001
+    sel2 = and_(and_(not_(ram64_select_bits[0]), ram64_select_bits[1]), not_(ram64_select_bits[2]))        # 010
+    sel3 = and_(and_(not_(ram64_select_bits[0]), ram64_select_bits[1]), ram64_select_bits[2])              # 011
+    sel4 = and_(and_(ram64_select_bits[0], not_(ram64_select_bits[1])), not_(ram64_select_bits[2]))        # 100
+    sel5 = and_(and_(ram64_select_bits[0], not_(ram64_select_bits[1])), ram64_select_bits[2])              # 101
+    sel6 = and_(and_(ram64_select_bits[0], ram64_select_bits[1]), not_(ram64_select_bits[2]))              # 110
+    sel7 = and_(and_(ram64_select_bits[0], ram64_select_bits[1]), ram64_select_bits[2])                    # 111
+    
+    # Update each RAM64 with load signal only if selected
+    out0 = self.ram64_0.update(in_, address, and_(sel0, load))
+    out1 = self.ram64_1.update(in_, address, and_(sel1, load))
+    out2 = self.ram64_2.update(in_, address, and_(sel2, load))
+    out3 = self.ram64_3.update(in_, address, and_(sel3, load))
+    out4 = self.ram64_4.update(in_, address, and_(sel4, load))
+    out5 = self.ram64_5.update(in_, address, and_(sel5, load))
+    out6 = self.ram64_6.update(in_, address, and_(sel6, load))
+    out7 = self.ram64_7.update(in_, address, and_(sel7, load))
+    
+    # Mux the outputs based on RAM64 selection bits
+    temp1 = mux16(out0, out1, ram64_select_bits[2])
+    temp2 = mux16(out2, out3, ram64_select_bits[2])
+    temp3 = mux16(out4, out5, ram64_select_bits[2])
+    temp4 = mux16(out6, out7, ram64_select_bits[2])
+    
+    temp5 = mux16(temp1, temp2, ram64_select_bits[1])
+    temp6 = mux16(temp3, temp4, ram64_select_bits[1])
+    
+    return mux16(temp5, temp6, ram64_select_bits[0])
+
+class RAM4K:
+  def __init__(self):
+    self.ram512_0 = RAM512()
+    self.ram512_1 = RAM512()
+    self.ram512_2 = RAM512()
+    self.ram512_3 = RAM512()
+    self.ram512_4 = RAM512()
+    self.ram512_5 = RAM512()
+    self.ram512_6 = RAM512()
+    self.ram512_7 = RAM512()
+  
+  def update(self, in_: list[int], address: list[int], load: int) -> list[int]:
+    # Use bits [11:9] to select which RAM512 unit (0-7)
+    # Use bits [8:0] to select location within that RAM512 unit
+    ram512_select_bits = address[-12:-9]  # Bits 11,10,9 select RAM512 unit
+    
+    # Decode which RAM512 to enable
+    sel0 = and_(and_(not_(ram512_select_bits[0]), not_(ram512_select_bits[1])), not_(ram512_select_bits[2]))  # 000
+    sel1 = and_(and_(not_(ram512_select_bits[0]), not_(ram512_select_bits[1])), ram512_select_bits[2])        # 001
+    sel2 = and_(and_(not_(ram512_select_bits[0]), ram512_select_bits[1]), not_(ram512_select_bits[2]))        # 010
+    sel3 = and_(and_(not_(ram512_select_bits[0]), ram512_select_bits[1]), ram512_select_bits[2])              # 011
+    sel4 = and_(and_(ram512_select_bits[0], not_(ram512_select_bits[1])), not_(ram512_select_bits[2]))        # 100
+    sel5 = and_(and_(ram512_select_bits[0], not_(ram512_select_bits[1])), ram512_select_bits[2])              # 101
+    sel6 = and_(and_(ram512_select_bits[0], ram512_select_bits[1]), not_(ram512_select_bits[2]))              # 110
+    sel7 = and_(and_(ram512_select_bits[0], ram512_select_bits[1]), ram512_select_bits[2])                    # 111
+    
+    # Update each RAM512 with load signal only if selected
+    out0 = self.ram512_0.update(in_, address, and_(sel0, load))
+    out1 = self.ram512_1.update(in_, address, and_(sel1, load))
+    out2 = self.ram512_2.update(in_, address, and_(sel2, load))
+    out3 = self.ram512_3.update(in_, address, and_(sel3, load))
+    out4 = self.ram512_4.update(in_, address, and_(sel4, load))
+    out5 = self.ram512_5.update(in_, address, and_(sel5, load))
+    out6 = self.ram512_6.update(in_, address, and_(sel6, load))
+    out7 = self.ram512_7.update(in_, address, and_(sel7, load))
+    
+    # Mux the outputs based on RAM512 selection bits
+    temp1 = mux16(out0, out1, ram512_select_bits[2])
+    temp2 = mux16(out2, out3, ram512_select_bits[2])
+    temp3 = mux16(out4, out5, ram512_select_bits[2])
+    temp4 = mux16(out6, out7, ram512_select_bits[2])
+    
+    temp5 = mux16(temp1, temp2, ram512_select_bits[1])
+    temp6 = mux16(temp3, temp4, ram512_select_bits[1])
+    
+    return mux16(temp5, temp6, ram512_select_bits[0])
+
+class RAM16K:
+  def __init__(self):
+    self.ram4k_0 = RAM4K()
+    self.ram4k_1 = RAM4K()
+    self.ram4k_2 = RAM4K()
+    self.ram4k_3 = RAM4K()
+  
+  def update(self, in_: list[int], address: list[int], load: int) -> list[int]:
+    # Use bits [13:12] to select which RAM4K unit (0-3)
+    # Use bits [11:0] to select location within that RAM4K unit
+    ram4k_select_bits = address[-14:-12]  # Bits 13,12 select RAM4K unit
+    
+    # Decode which RAM4K to enable (only need 2 bits for 4 units)
+    sel0 = and_(not_(ram4k_select_bits[0]), not_(ram4k_select_bits[1]))  # 00
+    sel1 = and_(not_(ram4k_select_bits[0]), ram4k_select_bits[1])        # 01
+    sel2 = and_(ram4k_select_bits[0], not_(ram4k_select_bits[1]))        # 10
+    sel3 = and_(ram4k_select_bits[0], ram4k_select_bits[1])              # 11
+    
+    # Update each RAM4K with load signal only if selected
+    out0 = self.ram4k_0.update(in_, address, and_(sel0, load))
+    out1 = self.ram4k_1.update(in_, address, and_(sel1, load))
+    out2 = self.ram4k_2.update(in_, address, and_(sel2, load))
+    out3 = self.ram4k_3.update(in_, address, and_(sel3, load))
+    
+    # Mux the outputs based on RAM4K selection bits
+    temp1 = mux16(out0, out1, ram4k_select_bits[1])
+    temp2 = mux16(out2, out3, ram4k_select_bits[1])
+    
+    return mux16(temp1, temp2, ram4k_select_bits[0])
 
 class PC:
   def __init__(self):
@@ -416,8 +515,8 @@ class PC:
 class CPU:
   def __init__(self):
     self.pc = PC()
-    self.regA = MemoryWord()
-    self.regD = MemoryWord()
+    self.regA = Register()
+    self.regD = Register()
     self.ALUOutput = [0 for _ in range(16)]
   
   def update(self, inM: list[int], instruction: list[int], reset: int):
@@ -449,7 +548,7 @@ class CPU:
 
 class MemoryChip:
     def __init__(self):
-      self.chip = Chip_32768()
+      self.chip = RAM16K()
 
     def update(self, in_: list[int], address: list[int], load: int) -> list[int]:
         '''
@@ -466,9 +565,9 @@ def int_to_stream3(a: int) -> list[int]:
   return stream
 
 
-class ROM32K:
+class ROM16K:
   def __init__(self):
-    self.chip = Chip_32768()
+    self.chip = RAM16K()
   
   def update(self, address: list[int]) -> list[int]:
     '''
@@ -481,10 +580,10 @@ class ROM32K:
     self.chip.update(in_, address, 1)
 class Computer:
   def __init__(self):
-    self.rom = ROM32K()
+    self.rom = ROM16K()
     self.mem = MemoryChip()
     self.cpu = CPU()
-    
+
   def run(self):
     outM, writeM, addressM, pc = self.cpu.update(int_to_stream16(0), int_to_stream16(0), 1)
     inM = int_to_stream16(0)
@@ -496,8 +595,9 @@ class Computer:
   def load_instructions(self, filename: str):
     addr = 0
     with open(filename, 'r') as f:
-      for line in f.readlines():
-        self.rom.write(list(line), int_to_stream16(addr))
+      for line in f.read().split('\n'):
+        self.rom.write(list(map(lambda x: int(x), list(line))), int_to_stream16(addr))
+        addr += 1
 
 def int_to_stream8(a: int) -> list[int]:
   stream = [0 for _ in range(8)]
