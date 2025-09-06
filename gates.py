@@ -525,24 +525,56 @@ class CPU:
     instruction: 16 bit input instruction
     reset: Set pc to 0 if set
     '''
-    i, a, c, d, j = instruction[0], instruction[3], instruction[4:10], instruction[10:13], instruction[13:16]
-    outM, writeM, addressM, pc = 0, 0, 0, 0
-    mux0Out = mux16(self.ALUOutput, instruction, i)
-    regAOut = self.regA.update(mux0Out, d[0])
+    # Parse instruction bits
+    i = instruction[0]  # instruction type (0=A-instruction, 1=C-instruction)
+    a = instruction[3]  # ALU input selection
+    c = instruction[4:10]  # ALU control bits
+    d = instruction[10:13]  # destination bits
+    j = instruction[13:16]  # jump bits
+    
+    # Mux to select A register input (instruction vs ALU output)
+    mux0Out = mux16(instruction, self.ALUOutput, i)
+    
+    # Update A register (load if A-instruction or if destination includes A)
+    loadA = or_(not_(i), d[0])  # Load A if A-instruction OR C-instruction with d1=1
+    regAOut = self.regA.update(mux0Out, loadA)
     addressM = regAOut
     
-    regDOut = self.regD.update(self.ALUOutput, d[1])
-    mux1Out = mux16(regAOut, inM, i)
+    # Get current D register value (don't update yet)
+    currentD = [self.regD.b0.out, self.regD.b1.out, self.regD.b2.out, self.regD.b3.out,
+                self.regD.b4.out, self.regD.b5.out, self.regD.b6.out, self.regD.b7.out,
+                self.regD.b8.out, self.regD.b9.out, self.regD.b10.out, self.regD.b11.out,
+                self.regD.b12.out, self.regD.b13.out, self.regD.b14.out, self.regD.b15.out]
     
-    [self.ALUOutput, zr, ng] = ALU(regDOut, mux1Out, *c)
+    # Select ALU input (A register vs Memory)
+    mux1Out = mux16(regAOut, inM, a)
+    
+    # ALU operation (use current D register value)
+    self.ALUOutput, zr, ng = ALU(currentD, mux1Out, *c)
+    
+    # Now update D register with ALU output (only for C-instructions with d2=1)
+    loadD = and_(i, d[1])  # Load D only if C-instruction AND d2=1
+    regDOut = self.regD.update(self.ALUOutput, loadD)
     
     outM = self.ALUOutput
-    writeM = d[2]
-
-    inc = and_(not_(j[0]), and_(not_(j[1]), not_(j[2])))
-    load = or3_to_1(and3(j, [ng, zr, not_(ng)]))
+    writeM = and_(i, d[2])  # Write to memory only if C-instruction AND d3=1
     
-    pc = self.pc.update(regAOut, inc, load, reset)
+    # Jump logic
+    # j1=1: jump if ng (negative)
+    # j2=1: jump if zr (zero) 
+    # j3=1: jump if positive (not negative and not zero)
+    pos = and_(not_(ng), not_(zr))  # positive = not negative and not zero
+    
+    jump_neg = and_(j[0], ng)       # j1 AND negative
+    jump_zero = and_(j[1], zr)      # j2 AND zero  
+    jump_pos = and_(j[2], pos)      # j3 AND positive
+    
+    # Jump if any jump condition is met AND it's a C-instruction
+    jump = and_(i, or_(jump_neg, or_(jump_zero, jump_pos)))
+    
+    # PC control: increment normally, jump if condition met, reset if reset=1
+    inc = 1  # Always increment unless jumping or resetting
+    pc = self.pc.update(regAOut, inc, jump, reset)
     
     return outM, writeM, addressM, pc
 

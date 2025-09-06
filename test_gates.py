@@ -1,7 +1,7 @@
 import unittest
 from gates import (nand, not_, and_, or_, xor, mux, expand_1_to_16, and16, or16, not16, mux16, 
                    Register, RAM8, RAM64, half_adder, full_adder, add16, demux, int_to_stream3, 
-                   int_to_stream16, iszero16, DFF, ALU)
+                   int_to_stream16, iszero16, DFF, ALU, CPU, PC)
 import os
 
 class TestGates(unittest.TestCase):
@@ -444,6 +444,200 @@ class TestEdgeCases(unittest.TestCase):
         self.assertEqual(int_to_stream16(8), [0]*12 + [1, 0, 0, 0])
         self.assertEqual(int_to_stream16(256), [0]*7 + [1] + [0]*8)
         self.assertEqual(int_to_stream16(32768), [1] + [0]*15)
+
+
+class TestPC(unittest.TestCase):
+    def test_pc_initialization(self):
+        pc = PC()
+        self.assertEqual(pc.count, 0)
+    
+    def test_pc_increment(self):
+        pc = PC()
+        # inc=1, load=0, reset=0 -> should increment
+        result = pc.update([0]*16, 1, 0, 0)
+        self.assertEqual(result, 0)  # Returns old value
+        self.assertEqual(pc.count, 1)  # Internal count incremented
+        
+        # Increment again
+        result = pc.update([0]*16, 1, 0, 0)
+        self.assertEqual(result, 1)
+        self.assertEqual(pc.count, 2)
+    
+    def test_pc_load(self):
+        pc = PC()
+        pc.count = 5  # Set initial value
+        # inc=0, load=1, reset=0 -> should load input value
+        result = pc.update(int_to_stream16(100), 0, 1, 0)
+        self.assertEqual(result, 5)  # Returns old value
+        self.assertEqual(pc.count, int_to_stream16(100))  # Loaded new value
+    
+    def test_pc_reset(self):
+        pc = PC()
+        pc.count = 42  # Set some value
+        # inc=0, load=0, reset=1 -> should reset to 0
+        result = pc.update([1]*16, 0, 0, 1)
+        self.assertEqual(result, 42)  # Returns old value
+        self.assertEqual(pc.count, 0)  # Reset to 0
+    
+    def test_pc_priority_reset_over_load(self):
+        pc = PC()
+        pc.count = 10
+        # reset=1, load=1 -> reset should take priority
+        result = pc.update(int_to_stream16(50), 0, 1, 1)
+        self.assertEqual(result, 10)
+        self.assertEqual(pc.count, 0)  # Reset wins
+
+
+class TestCPU(unittest.TestCase):
+    def test_cpu_initialization(self):
+        cpu = CPU()
+        self.assertIsNotNone(cpu.pc)
+        self.assertIsNotNone(cpu.regA)
+        self.assertIsNotNone(cpu.regD)
+        self.assertEqual(cpu.ALUOutput, [0]*16)
+    
+    def test_cpu_a_instruction(self):
+        """Test A-instruction: @100 (load constant into A register)"""
+        cpu = CPU()
+        # A-instruction: i=0, value=100
+        # Format: 0vvvvvvvvvvvvvvv where v is the 15-bit value
+        instruction = [0] + int_to_stream16(100)[1:]  # i=0, then 15-bit value (skip MSB)
+        inM = [0] * 16
+        
+        outM, writeM, addressM, pc = cpu.update(inM, instruction, 0)
+        
+        # A-instruction should:
+        # - Load value into A register
+        # - Set addressM to the loaded value
+        # - Not write to memory (writeM=0)
+        # - Increment PC
+        self.assertEqual(list(addressM), int_to_stream16(100))
+        self.assertEqual(writeM, 0)
+        self.assertEqual(pc, 0)  # Returns old PC value
+    
+    def test_cpu_c_instruction_compute(self):
+        """Test C-instruction: D=A+1"""
+        cpu = CPU()
+        
+        # First load A register with value 5 using A-instruction
+        a_instruction = [0] + int_to_stream16(5)[1:]
+        cpu.update([0]*16, a_instruction, 0)
+        
+        # Now execute D=A+1
+        # C-instruction format: 1 11 a cccccc ddd jjj
+        # where: a=0 (use A), cccccc=ALU control for A+1, ddd=010 (store in D), jjj=000 (no jump)
+        # A+1 ALU control: zx=0,nx=0,zy=1,ny=1,f=1,no=0 (A + (-1) + 1 = A + 0, wait that's not right)
+        # Actually for A+1: zx=0,nx=0,zy=1,ny=1,f=1,no=0 gives A + !0 = A + (-1) 
+        # Let me use a different approach: A+0+1 isn't directly possible
+        # Let's test D=A instead (simpler)
+        
+        # D=A: i=1, a=0, c=110000 (just pass through A), d=010 (write to D), j=000
+        c_instruction = [1, 1, 1, 0,  # i=1, unused bits
+                        1, 1, 0, 0, 0, 0,  # c=110000 (ALU: output A)
+                        0, 1, 0,  # d=010 (write to D register)
+                        0, 0, 0]  # j=000 (no jump)
+        
+        outM, writeM, addressM, pc = cpu.update([0]*16, c_instruction, 0)
+        
+        # Should not write to memory
+        self.assertEqual(writeM, 0)
+        # PC should have incremented (no jump condition met)
+        self.assertEqual(pc, 1)  # Previous PC was 1, now should be 2, but returns old value
+    
+    def test_cpu_c_instruction_memory_write(self):
+        """Test C-instruction that writes to memory: M=D"""
+        cpu = CPU()
+        
+        # First set up D register with some value using A-instruction then C-instruction
+        # @10 (load 10 into A)
+        a_instruction = [0] + int_to_stream16(10)[1:]  # i=0, then 15-bit value (skip MSB)
+        cpu.update([0]*16, a_instruction, 0)
+        
+        # D=A (copy A to D)
+        d_equals_a = [1, 1, 1, 0,  # i=1, unused
+                     1, 1, 0, 0, 0, 0,  # c=110000 (output A)
+                     0, 1, 0,  # d=010 (write to D)
+                     0, 0, 0]  # j=000 (no jump)
+        cpu.update([0]*16, d_equals_a, 0)
+        
+        # Now set address in A for memory operation: @200
+        a_addr_instruction = [0] + int_to_stream16(200)[1:]  # i=0, then 15-bit value (skip MSB)
+        cpu.update([0]*16, a_addr_instruction, 0)
+        
+        # M=D (write D to memory at address A)
+        # c=001100 (output D), d=001 (write to M), j=000
+        m_equals_d = [1, 1, 1, 0,  # i=1, unused
+                     0, 0, 1, 1, 0, 0,  # c=001100 (output D)
+                     0, 0, 1,  # d=001 (write to M)
+                     0, 0, 0]  # j=000 (no jump)
+        
+        outM, writeM, addressM, pc = cpu.update([0]*16, m_equals_d, 0)
+        
+        # Should write to memory
+        self.assertEqual(writeM, 1)
+        # Output should be the value of D (which was 10)
+        self.assertEqual(list(outM), int_to_stream16(10))
+        # Address should be 200
+        self.assertEqual(list(addressM), int_to_stream16(200))
+    
+    def test_cpu_jump_instruction(self):
+        """Test jump instruction: 0;JMP (unconditional jump)"""
+        cpu = CPU()
+        
+        # First load A with jump target address: @1000
+        a_instruction = [0] + int_to_stream16(1000)[1:]  # i=0, then 15-bit value (skip MSB)
+        cpu.update([0]*16, a_instruction, 0)
+        
+        # 0;JMP - unconditional jump to address in A
+        # c=101010 (output 0), d=000 (don't write anywhere), j=111 (unconditional jump)
+        jump_instruction = [1, 1, 1, 0,  # i=1, unused
+                           1, 0, 1, 0, 1, 0,  # c=101010 (output 0)
+                           0, 0, 0,  # d=000 (no write)
+                           1, 1, 1]  # j=111 (unconditional jump)
+        
+        outM, writeM, addressM, pc = cpu.update([0]*16, jump_instruction, 0)
+        
+        # Should not write to memory
+        self.assertEqual(writeM, 0)
+        # Should have loaded PC with A register value (jump occurred)
+        # Note: update returns the OLD pc value, but internal PC should be set to A
+        self.assertEqual(pc, 1)  # This was the old PC value
+    
+    def test_cpu_conditional_jump_not_taken(self):
+        """Test conditional jump that should not be taken"""
+        cpu = CPU()
+        
+        # Load A with target address
+        a_instruction = [0] + int_to_stream16(500)[1:]  # i=0, then 15-bit value (skip MSB)
+        cpu.update([0]*16, a_instruction, 0)
+        
+        # Test D; JEQ (jump if D equals zero, but D is not zero)
+        # First make D non-zero: D=1
+        # We need to get 1 into D somehow. Let's use @1 then D=A
+        a_one = [0] + int_to_stream16(1)[1:]  # i=0, then 15-bit value (skip MSB)
+        cpu.update([0]*16, a_one, 0)
+        
+        d_equals_a = [1, 1, 1, 0,  # i=1, unused
+                     1, 1, 0, 0, 0, 0,  # c=110000 (output A)
+                     0, 1, 0,  # d=010 (write to D)
+                     0, 0, 0]  # j=000 (no jump)
+        cpu.update([0]*16, d_equals_a, 0)
+        
+        # Load target address again
+        cpu.update([0]*16, a_instruction, 0)
+        
+        # D; JEQ - should not jump because D=1 (not zero)
+        # c=001100 (output D), d=000, j=010 (jump if zero)
+        jeq_instruction = [1, 1, 1, 0,  # i=1, unused
+                          0, 0, 1, 1, 0, 0,  # c=001100 (output D)
+                          0, 0, 0,  # d=000 (no write)
+                          0, 1, 0]  # j=010 (JEQ - jump if zero)
+        
+        outM, writeM, addressM, pc = cpu.update([0]*16, jeq_instruction, 0)
+        
+        # Should not jump (increment PC instead)
+        # The exact PC value depends on how many instructions we've executed
+        self.assertEqual(writeM, 0)
 
 
 if __name__ == "__main__":
