@@ -252,8 +252,59 @@ class TestAssembler(unittest.TestCase):
         with self.assertRaises(Exception):
             asm.get_output_filename("Prog")      # no extension
     
-    def test_add_program_assembly(self):
-        pass
+    
+    def test_add_prog(self):
+        prog = '''// filepath: Add.asm\n// Computes sum of 5 and 7, stores result in RAM[0]\n\n@5\nD=A\n@7\nD=D+A\n@0\nM=D'''
+
+        hack = '''0000000000000101\n1110110000010000\n0000000000000111\n1110000010010000\n0000000000000000\n1110001100001000'''
+        
+        asm = Assembler()
+        self.assertEqual(asm.assemble(prog), hack)
+        
+    def test_max_prog(self):
+        prog = '''@R0
+D=M
+@R1
+D=D-M
+@FIRST_LARGER
+D;JGT
+@R1
+D=M
+@R2
+M=D
+@END
+0;JMP
+(FIRST_LARGER)
+@R0
+D=M
+@R2
+M=D
+(END)
+@END
+0;JMP'''
+
+        expected_hack = '''0000000000000000
+1111110000010000
+0000000000000001
+1111010011010000
+0000000000001100
+1110001100000001
+0000000000000001
+1111110000010000
+0000000000000010
+1110001100001000
+0000000000010000
+1110101010000111
+0000000000000000
+1111110000010000
+0000000000000010
+1110001100001000
+0000000000010000
+1110101010000111'''
+
+        asm = Assembler()
+        hack = asm.assemble(prog)
+        self.assertEqual(hack, expected_hack)
 
 if __name__ == "__main__":
     unittest.main()

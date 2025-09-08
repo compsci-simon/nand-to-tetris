@@ -71,9 +71,11 @@ class Parser:
     
     def symbol(self) -> str:
         if self.command_type() == 'A_COMMAND':
-            return self.symbol_table[self.current_command[1:]]
+            if self.current_command[1:].isdigit():
+                return int(self.current_command[1:])
+            return int(self.symbol_table[self.current_command[1:]])
         else:
-            return self.symbol_table[self.current_command[1:-1]]
+            return int(self.symbol_table[self.current_command[1:-1]])
     
     def dest(self) -> str:
         split_instr = self.current_command.split('//')[0].split('=')
@@ -98,58 +100,58 @@ class Parser:
 class Code:
     def dest(mnemonic: str) -> tuple[int, int, int]:
         return {
-            'null': tuple(0,0,0),
-            'M': tuple(0,0,1),
-            'D': tuple(0,1,0),
-            'MD': tuple(0,1,1),
-            'A': tuple(1,0,0),
-            'AM': tuple(1,0,1),
-            'AD': tuple(1,1,0),
-            'AMD': tuple(1,1,1)
+            'null': tuple((0,0,0)),
+            'M': tuple((0,0,1)),
+            'D': tuple((0,1,0)),
+            'MD': tuple((0,1,1)),
+            'A': tuple((1,0,0)),
+            'AM': tuple((1,0,1)),
+            'AD': tuple((1,1,0)),
+            'AMD': tuple((1,1,1))
         }[mnemonic]
 
     def comp(mnemonic: str) -> tuple[int, int, int, int, int, int, int]:
         return {
-            '0': tuple(0, 1, 0, 1, 0, 1, 0),
-            '1': tuple(0, 1, 1, 1, 1, 1, 1),
-            '-1': tuple(0, 1, 1, 1, 0, 1, 0),
-            'D': tuple(0, 0, 0, 1, 1, 0, 0),
-            'A': tuple(0, 1, 1, 0, 0, 0, 0),
-            '!D': tuple(0, 0, 0, 1, 1, 0, 1),
-            '!A': tuple(0, 1, 1, 0, 0, 0, 1),
-            '-D': tuple(0, 0, 0, 1, 1, 1, 1),
-            '-A': tuple(0, 1, 1, 0, 0, 1, 1),
-            'D+1': tuple(0, 0, 1, 1, 1, 1, 1),
-            'A+1': tuple(0, 1, 1, 0, 1, 1, 1),
-            'D-1': tuple(0, 0, 0, 1, 1, 1, 0),
-            'A-1': tuple(0, 1, 1, 0, 0, 1, 0),
-            'D+A': tuple(0, 0, 0, 0, 0, 1, 0),
-            'D-A': tuple(0, 0, 1, 0, 0, 1, 1),
-            'A-D': tuple(0, 0, 0, 0, 1, 1, 1),
-            'D&A': tuple(0, 0, 0, 0, 0, 0, 0),
-            'D|A': tuple(0, 0, 1, 0, 1, 0, 1),
-            'M': tuple(1, 1, 1, 0, 0, 0, 0),
-            '!M': tuple(1, 1, 1, 0, 0, 0, 1),
-            '-M': tuple(1, 1, 1, 0, 0, 1, 1),
-            'M+1': tuple(1, 1, 1, 0, 1, 1, 1),
-            'M-1': tuple(1, 1, 1, 0, 0, 1, 0),
-            'D+M': tuple(1, 0, 0, 0, 0, 1, 0),
-            'D-M': tuple(1, 0, 1, 0, 0, 1, 1),
-            'M-D': tuple(1, 0, 0, 0, 1, 1, 1),
-            'D&M': tuple(1, 0, 0, 0, 0, 0, 0),
-            'D|M': tuple(1, 0, 1, 0, 1, 0, 1),
+            '0': tuple((0, 1, 0, 1, 0, 1, 0)),
+            '1': tuple((0, 1, 1, 1, 1, 1, 1)),
+            '-1': tuple((0, 1, 1, 1, 0, 1, 0)),
+            'D': tuple((0, 0, 0, 1, 1, 0, 0)),
+            'A': tuple((0, 1, 1, 0, 0, 0, 0)),
+            '!D': tuple((0, 0, 0, 1, 1, 0, 1)),
+            '!A': tuple((0, 1, 1, 0, 0, 0, 1)),
+            '-D': tuple((0, 0, 0, 1, 1, 1, 1)),
+            '-A': tuple((0, 1, 1, 0, 0, 1, 1)),
+            'D+1': tuple((0, 0, 1, 1, 1, 1, 1)),
+            'A+1': tuple((0, 1, 1, 0, 1, 1, 1)),
+            'D-1': tuple((0, 0, 0, 1, 1, 1, 0)),
+            'A-1': tuple((0, 1, 1, 0, 0, 1, 0)),
+            'D+A': tuple((0, 0, 0, 0, 0, 1, 0)),
+            'D-A': tuple((0, 0, 1, 0, 0, 1, 1)),
+            'A-D': tuple((0, 0, 0, 0, 1, 1, 1)),
+            'D&A': tuple((0, 0, 0, 0, 0, 0, 0)),
+            'D|A': tuple((0, 0, 1, 0, 1, 0, 1)),
+            'M': tuple((1, 1, 1, 0, 0, 0, 0)),
+            '!M': tuple((1, 1, 1, 0, 0, 0, 1)),
+            '-M': tuple((1, 1, 1, 0, 0, 1, 1)),
+            'M+1': tuple((1, 1, 1, 0, 1, 1, 1)),
+            'M-1': tuple((1, 1, 1, 0, 0, 1, 0)),
+            'D+M': tuple((1, 0, 0, 0, 0, 1, 0)),
+            'D-M': tuple((1, 0, 1, 0, 0, 1, 1)),
+            'M-D': tuple((1, 0, 0, 0, 1, 1, 1)),
+            'D&M': tuple((1, 0, 0, 0, 0, 0, 0)),
+            'D|M': tuple((1, 0, 1, 0, 1, 0, 1)),
         }[mnemonic]
 
     def jump(mnemonic: str) -> tuple[int, int, int]:
         return {
-            'null': tuple(0,0,0),
-            'JGT': tuple(0,0,1),
-            'JEQ': tuple(0,1,0),
-            'JGE': tuple(0,1,1),
-            'JLT': tuple(1,0,0),
-            'JNE': tuple(1,0,1),
-            'JLE': tuple(1,1,0),
-            'JMP': tuple(1,1,1),
+            'null': tuple((0,0,0)),
+            'JGT': tuple((0,0,1)),
+            'JEQ': tuple((0,1,0)),
+            'JGE': tuple((0,1,1)),
+            'JLT': tuple((1,0,0)),
+            'JNE': tuple((1,0,1)),
+            'JLE': tuple((1,1,0)),
+            'JMP': tuple((1,1,1)),
         }[mnemonic]
 
 class Assembler:
@@ -178,7 +180,34 @@ class Assembler:
             return str(path.with_suffix('.hack'))
         else:
             raise Exception("Input file must have .asm extension")
+    
+    def assemble(self, input_file: str) -> str:
+        """Assembles the given assembly code string into binary machine code string"""
+        parser = Parser(input_file)
+        output_binary = ""
+        while parser.has_more_commands():
+            parser.advance()
+            c_type = parser.command_type()
+            if c_type == 'A_COMMAND':
+                symbol = parser.symbol()
+                binary_value = format(symbol, '015b')
+                output_binary += '0' + binary_value + '\n'
+            elif c_type == 'C_COMMAND':
+                dest_mnemonic = parser.dest() if parser.dest() else 'null'
+                comp_mnemonic = parser.comp()
+                jump_mnemonic = parser.jump() if parser.jump() else 'null'
                 
+                a, c1, c2, c3, c4, c5, c6 = Code.comp(comp_mnemonic)
+                d1, d2, d3 = Code.dest(dest_mnemonic)
+                j1, j2, j3 = Code.jump(jump_mnemonic)
+                
+                binary_value = f'111{a}{c1}{c2}{c3}{c4}{c5}{c6}{d1}{d2}{d3}{j1}{j2}{j3}'
+                output_binary += binary_value + '\n'
+            elif c_type == 'L_COMMAND':
+                continue
+            else:
+                raise Exception(f"We should not get a type of {c_type}")
+        return output_binary.strip()
                     
 
 
