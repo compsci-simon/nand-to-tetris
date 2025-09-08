@@ -49,7 +49,7 @@ class TestParser(unittest.TestCase):
         self.assertTrue(parser.jump() == 'jump')
         parser.advance()
         self.assertTrue(parser.command_type() == 'C_COMMAND')
-        self.assertTrue(parser.comp() == '')
+        self.assertTrue(parser.comp() == '0')
         self.assertTrue(parser.jump() == 'JMP')
         parser.advance()
         self.assertTrue(parser.command_type() == 'C_COMMAND')

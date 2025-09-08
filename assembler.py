@@ -53,15 +53,16 @@ class Parser:
     
     def advance(self) -> None:
         self.current_command = self.lines[self.line_index]
+        while len(list(self.current_command.split('//')[0].strip())) == 0:
+            self.line_index += 1
+            self.current_command = self.lines[self.line_index]
         if self.command_type() in ['A_COMMAND', 'C_COMMAND']:
             self.instruction_count += 1
         self.line_index += 1
     
-    def command_type(self) -> Literal['A_COMMAND', 'C_COMMAND', 'L_COMMAND', None]:
+    def command_type(self) -> Literal['A_COMMAND', 'C_COMMAND', 'L_COMMAND']:
         command = self.current_command.split('//')[0].replace(' ', '')
         command_list = list(command)
-        if len(command_list) == 0:
-            return None
         if command_list[0] == '@':
             return 'A_COMMAND'
         elif command_list[0] == '(' and command_list[-1] == ')':
@@ -78,21 +79,21 @@ class Parser:
         split_instr = self.current_command.split('//')[0].split('=')
         if len(split_instr) == 1:
             return ''
-        return split_instr[0]
+        return split_instr[0].strip()
     
     def comp(self) -> str:
         split_instr = self.current_command.split('//')[0].split('=')
         if len(split_instr) == 1:
-            return split_instr[0].split(';')[0]
+            return split_instr[0].split(';')[0].strip()
         else:
-            return split_instr[1].split(';')[0]
+            return split_instr[1].split(';')[0].strip()
             
     
     def jump(self) -> str:
         split_instr = self.current_command.split('//')[0].split(';')
         if len(split_instr) == 1:
             return ''
-        return split_instr[1]
+        return split_instr[1].strip()
 
 class Code:
     def dest(mnemonic: str) -> tuple[int, int, int]:
