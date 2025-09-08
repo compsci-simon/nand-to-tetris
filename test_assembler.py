@@ -306,5 +306,54 @@ M=D
         hack = asm.assemble(prog)
         self.assertEqual(hack, expected_hack)
 
+    def test_add_100(self):
+        prog = '''// Adds 1 + ... + 100
+@i
+M=1 // i=1
+@sum
+M=0 // sum=0
+(LOOP)
+@i
+D=M // D=i
+@100
+D=D-A // D=i-100
+@END
+D;JGT // if (i-100)>0 goto END
+@i
+D=M // D=i
+@sum
+M=D+M // sum=sum+i
+@i
+M=M+1 // i=i+1
+@LOOP
+0;JMP // goto LOOP
+(END)
+@END
+0;JMP // infinite loop'''
+
+        expected_hack = '''0000000000010000
+1110111111001000
+0000000000010001
+1110101010001000
+0000000000010000
+1111110000010000
+0000000001100100
+1110010011010000
+0000000000010010
+1110001100000001
+0000000000010000
+1111110000010000
+0000000000010001
+1111000010001000
+0000000000010000
+1111110111001000
+0000000000000100
+1110101010000111
+0000000000010010
+1110101010000111'''
+        asm = Assembler()
+        hack = asm.assemble(prog)
+        self.assertEqual(hack, expected_hack)
+
 if __name__ == "__main__":
     unittest.main()
